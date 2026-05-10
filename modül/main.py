@@ -84,12 +84,16 @@ class KullaniciEkle(BaseModel):
     sifre: str = Field(..., min_length=4, max_length=128)
     ad_soyad: str = Field("", max_length=100)
     grup_id: int = Field(2, ge=1)  # Varsayılan: yonetici grubu
-
+    etiketler: Optional[list[int]] = None
 
 class YetkiGrubuEkle(BaseModel):
     grup_adi: str = Field(..., min_length=2, max_length=50)
     aciklama: str = Field("", max_length=200)
     izinler: str = Field("{}", max_length=500)
+
+class EtiketEkle(BaseModel):
+    etiket_adi: str = Field(..., min_length=2, max_length=30)
+    renk: str = Field("bg-slate-500", max_length=20)
 
 
 class SistemTercihiGuncelle(BaseModel):
@@ -258,7 +262,8 @@ async def kullanici_olustur(
             kullanici_adi=veri.kullanici_adi,
             sifre=veri.sifre,
             ad_soyad=veri.ad_soyad,
-            grup_id=veri.grup_id
+            grup_id=veri.grup_id,
+            etiketler=veri.etiketler
         )
         return {"id": yeni_id, "mesaj": "Kullanıcı oluşturuldu"}
     except Exception as e:
@@ -314,6 +319,40 @@ async def yetki_grubu_kaldir(
     if not db.yetki_grubu_sil(grup_id):
         raise HTTPException(400, "Bu grup silinemez (varsayılan grup veya bulunamadı)")
     return {"mesaj": "Yetki grubu silindi"}
+
+
+# ══════════════════════════════════════════════════════════════
+#  ETİKETLER API
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/api/etiketler")
+async def etiketleri_listele(aktif_kullanici=Depends(mevcut_kullanici)):
+    """Tüm etiketleri listeler."""
+    return db.etiketleri_getir()
+
+@app.post("/api/etiketler", status_code=201)
+async def etiket_olustur(
+    veri: EtiketEkle,
+    aktif_kullanici=Depends(mevcut_kullanici)
+):
+    """Yeni etiket oluşturur."""
+    try:
+        yeni_id = db.etiket_ekle(veri.etiket_adi, veri.renk)
+        return {"id": yeni_id, "mesaj": "Etiket oluşturuldu"}
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(409, "Bu etiket zaten mevcut")
+        raise HTTPException(500, f"Etiket oluşturulamadı: {e}")
+
+@app.delete("/api/etiketler/{etiket_id}")
+async def etiket_kaldir(
+    etiket_id: int,
+    aktif_kullanici=Depends(mevcut_kullanici)
+):
+    """Etiketi siler."""
+    if not db.etiket_sil(etiket_id):
+        raise HTTPException(404, "Etiket bulunamadı")
+    return {"mesaj": "Etiket silindi"}
 
 
 # ══════════════════════════════════════════════════════════════

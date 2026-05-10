@@ -181,3 +181,31 @@ CREATE TABLE IF NOT EXISTS sistem_tercihleri (
     guncelleme_t    TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(kullanici_id, anahtar)
 );
+
+-- ------------------------------------------------------------
+-- 10. ETİKETLER (Tags)
+--     Kullanıcılara veya sistem nesnelerine atanabilen etiketler.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS etiketler (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    etiket_adi      TEXT    NOT NULL UNIQUE,
+    renk            TEXT    NOT NULL DEFAULT 'bg-slate-500',
+    olusturma_t     TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Varsayılan etiketler
+INSERT OR IGNORE INTO etiketler (etiket_adi, renk) VALUES
+    ('Kritik', 'bg-red-500'),
+    ('İzole', 'bg-blue-500'),
+    ('Dahili', 'bg-green-500');
+
+-- ------------------------------------------------------------
+-- 11. KULLANICI ETİKETLERİ (Many-to-Many Relationship)
+--     Kullanıcılara atanan etiketler.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kullanici_etiketleri (
+    kullanici_id    INTEGER NOT NULL REFERENCES kullanicilar(id) ON DELETE CASCADE,
+    etiket_id       INTEGER NOT NULL REFERENCES etiketler(id) ON DELETE CASCADE,
+    PRIMARY KEY (kullanici_id, etiket_id)
+);
+

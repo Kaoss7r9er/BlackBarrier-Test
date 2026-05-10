@@ -109,13 +109,53 @@ def yetki_grubu_sil(grup_id: int) -> bool:
 
 
 # ══════════════════════════════════════════════════════════════
+#  ETİKETLER (Tags)
+# ══════════════════════════════════════════════════════════════
+
+def etiketleri_getir() -> list[dict]:
+    """Tüm etiketleri döndürür."""
+    with baglanti_al() as bg:
+        return [dict(s) for s in bg.execute(
+            "SELECT * FROM etiketler ORDER BY id ASC"
+        ).fetchall()]
+
+def etiket_ekle(etiket_adi: str, renk: str = "bg-slate-500") -> int:
+    """Yeni etiket oluşturur."""
+    with baglanti_al() as bg:
+        imle = bg.execute(
+            "INSERT INTO etiketler (etiket_adi, renk) VALUES (?, ?)",
+            (etiket_adi, renk)
+        )
+        bg.commit()
+        return imle.lastrowid
+
+def etiket_sil(etiket_id: int) -> bool:
+    """Etiketi siler."""
+    with baglanti_al() as bg:
+        etkilenen = bg.execute(
+            "DELETE FROM etiketler WHERE id = ?", (etiket_id,)
+        ).rowcount
+        bg.commit()
+    return etkilenen > 0
+
+def kullanici_etiketlerini_guncelle(bg: sqlite3.Connection, kullanici_id: int, etiket_idler: list[int]):
+    """Kullanıcının etiketlerini günceller."""
+    bg.execute("DELETE FROM kullanici_etiketleri WHERE kullanici_id = ?", (kullanici_id,))
+    if etiket_idler:
+        bg.executemany(
+            "INSERT INTO kullanici_etiketleri (kullanici_id, etiket_id) VALUES (?, ?)",
+            [(kullanici_id, e_id) for e_id in etiket_idler]
+        )
+
+# ══════════════════════════════════════════════════════════════
 #  KULLANICI İŞLEMLERİ
 # ══════════════════════════════════════════════════════════════
 
 def kullanici_olustur(kullanici_adi: str, sifre: str, rol: str = "admin",
-                      ad_soyad: str = "", grup_id: int = 1) -> int:
+                      ad_soyad: str = "", grup_id: int = 1, etiketler: list[int] = None) -> int:
     """
     Yeni yönetici oluşturur. Şifreyi bcrypt ile hashler.
+    Etiket ID listesi verilirse atar.
     Döndürür: yeni kullanıcının id'si
     """
     hash_deger = bcrypt.hashpw(sifre.encode(), bcrypt.gensalt()).decode()
@@ -125,8 +165,13 @@ def kullanici_olustur(kullanici_adi: str, sifre: str, rol: str = "admin",
                VALUES (?, ?, ?, ?, ?)""",
             (kullanici_adi, hash_deger, rol, ad_soyad, grup_id)
         )
+        k_id = imle.lastrowid
+        
+        if etiketler:
+            kullanici_etiketlerini_guncelle(bg, k_id, etiketler)
+            
         bg.commit()
-        return imle.lastrowid
+        return k_id
 
 
 def kullanici_dogrula(kullanici_adi: str, sifre: str) -> dict | None:
@@ -163,9 +208,9 @@ def kullanici_var_mi() -> bool:
 
 
 def kullanicilari_getir() -> list[dict]:
-    """Tüm kullanıcıları grup bilgileriyle listeler."""
+    """Tüm kullanıcıları grup bilgileri ve etiketleriyle listeler."""
     with baglanti_al() as bg:
-        return [dict(s) for s in bg.execute(
+        kullanicilar = [dict(s) for s in bg.execute(
             """SELECT k.id, k.kullanici_adi, k.ad_soyad, k.rol, k.grup_id,
                       k.olusturma_t, k.son_giris_t,
                       yg.grup_adi, yg.izinler as grup_izinleri
@@ -173,6 +218,25 @@ def kullanicilari_getir() -> list[dict]:
                LEFT JOIN yetki_gruplari yg ON k.grup_id = yg.id
                ORDER BY k.id ASC"""
         ).fetchall()]
+        
+        # Etiketleri de çekip birleştiriyoruz
+        etiket_satirlari = bg.execute(
+            """SELECT ke.kullanici_id, e.id, e.etiket_adi, e.renk 
+               FROM kullanici_etiketleri ke
+               JOIN etiketler e ON ke.etiket_id = e.id"""
+        ).fetchall()
+        
+        etiket_map = {}
+        for s in etiket_satirlari:
+            kid = s['kullanici_id']
+            if kid not in etiket_map:
+                etiket_map[kid] = []
+            etiket_map[kid].append({"id": s["id"], "etiket_adi": s["etiket_adi"], "renk": s["renk"]})
+            
+        for k in kullanicilar:
+            k["etiketler"] = etiket_map.get(k["id"], [])
+            
+        return kullanicilar
 
 
 def kullanici_bilgisi_getir(kullanici_adi: str) -> dict | None:
